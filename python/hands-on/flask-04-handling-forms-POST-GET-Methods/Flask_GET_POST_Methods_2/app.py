@@ -28,4 +28,8 @@ def calculate():
 # Add a statement to run the Flask application which can be debugged.
 if __name__ == "__main__":
     #app.run(debug=True)
+<<<<<<< HEAD
     app.run(host='0.0.0.0', port=80)
+=======
+    app.run(host='0.0.0.0', port=80)
+>>>>>>> 5f1f8f19ed44229a080e22fd429b47803499c66c
