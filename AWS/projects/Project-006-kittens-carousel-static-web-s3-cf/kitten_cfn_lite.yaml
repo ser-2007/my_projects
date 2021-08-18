@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |  #cfn lite da yaziyoruz yaml dosyamizi
+  Cloudformation Template for kittens carousel static website deploy on s3 through cloudfront and route 53
+Parameters: #parameter iki tane yazacagiz. birisi hosted zonu cekecek, ikinci olarak ise
+  DomainName: # hosted zone yazip cikandan parameter type yazani aldik 
+    Description: DNS Name of existing Amazon Route 53 hosted zone ex. clarusway.us
+    Type: AWS::Route53::HostedZone::Id  #type otomatik geldi
+  KittensDomainName: # parameter yazip ikinci cikani sectik
+    Description: Full domain name for the App. ex. kittens.clarusway.us
+    Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-) #domain name yazarken kullanici basinda sonunca ? ! vs yazamaz, 63 karaktere kadar yazilabilir adanzye0dan9a kadar isim verilebilir
+
+Resources:
+  KittensBucket: #s3 bucket yazuip ilk cikani ekliyoruz
+    Type: AWS::S3::Bucket
+    Properties:  
+      AccessControl: PublicRead  #access control public read yaptik.
+      BucketName: !Ref KittensDomainName #yukarda parametre olarak yazmiostik ref ile cekecez
+      WebsiteConfiguration:
+        IndexDocument: index.html  # burda sadece indexdocument kullanacagiz error documentimiz yok
+  KittensBucketPolicy: #bucketPolicy yi olusturuyoruz. s3BucketPolicy yazinca cikiyor
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref KittensBucket  #burdaki benim cloudformationdaki isim burdaki bucket ismini resource dan veriyoruz
+      PolicyDocument:   #bucket policy olusturuyoruz
+        Statement:
+          - Sid: PublicReadforStaticWebSite
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Join ['', ['arn:aws:s3:::', !Ref 'KittensBucket', /*]] # biz bucket polici olustururken kendi bucketimizin ARN noisu ile koyuyorduk. Join bosluk olmadan string ifadeyi al, bucketnameizinin onundeki arn ile sonra bosluk birakmdan yuklarda belirttigimiz bucketimizi birlestir.
+  KittensCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      CertificateTransparencyLoggingPreference: ENABLED #security issue olarak enable ediyoruz istemedigimiz hatali sertifikalar kayit olmasin diye
+      DomainName: !Ref KittensDomainName  # Required
+      DomainValidationOptions:
+        - DomainName: !Ref KittensDomainName
+          HostedZoneId: !Ref DomainName
+      ValidationMethod: DNS #dogrulama icin mail vbeya dns metodu vardi, DNS i seciyoruz.
+  KittensRecordSet: #recordsetgrup seciyoruz record olusturmamiz gerekior
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref DomainName 
+      RecordSets: 
+      - Name: !Ref KittensDomainName
+        Type: A 
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2
+          DNSName: !GetAtt KittensCloudfront.DomainName #cloudfrontisminin domain nameini alacagiz
+  KittensCloudfront: #Cloudfrontdistribution seciyoruz
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: CloudFront Distrubition ponting to Kittens S3 Bucket    
+        Aliases:
+          - !Ref KittensDomainName
+        DefaultCacheBehavior: 
+          AllowedMethods:
+            - GET
+            - HEAD 
+          Compress: true
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          TargetOriginId: KittensOrigin
+          ViewerProtocolPolicy: allow-all
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: 'http2'
+        Origins:
+        - DomainName: !Select [2, !Split ["/", !GetAtt KittensBucket.WebsiteURL]] #
+          Id: KittensOrigin
+          CustomOriginConfig:
+            OriginProtocolPolicy: http-only
+        PriceClass: PriceClass_All #hepsni sececegiz tum bolgelerden erisilebilsin 
+        ViewerCertificate:
+          AcmCertificateArn: !Ref KittensCertificate #yukarda olusturdugumuz certificate ref yapp cagiriyoruz
+          SslSupportMethod: sni-only #tavsiye edileni yapiyoruz
+          
+Outputs:
+  BucketName: 
+    Description: S3 Bucket URL for Kittens Website
+    Value: !GetAtt KittensBucket.WebsiteURL
+  CloudfrontEndpoint:
+    Description: Endpoint for Kittens Cloudfront
+    Value: !GetAtt KittensCloudfront.DomainName
+  FullDomainName:
+    Description: Full Domain Name of my Application
+    Value: !Ref KittensDomainName
